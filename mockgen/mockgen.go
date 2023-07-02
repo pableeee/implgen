@@ -423,7 +423,7 @@ func (g *generator) Generate(pkg *model.Package, outputPkgName string, outputPac
 	}
 
 	for _, intf := range pkg.Interfaces {
-		if err := g.GenerateMockInterface(intf, outputPackagePath); err != nil {
+		if err := g.GenerateTracedInterface(intf, outputPackagePath); err != nil {
 			return err
 		}
 	}
