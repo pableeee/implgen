@@ -140,8 +140,13 @@ func (g *generator) GenerateTracedMethod(mockType string, m *model.Method, pkgOv
 	g.p("// %v traced base method.", m.Name)
 	g.p("func (%v *%v%v) %v(%v)%v {", idRecv, mockType, shortTp, m.Name, argString, retString)
 	g.in()
-	g.p("_, span := %s.tracer.Start(context.TODO(), %q)", idRecv, m.Name)
-	g.p("defer span.End()")
+
+	if len(argNames) > 0 && argTypes[0] == "context.Context" {
+		ctxArg := argNames[0]
+		// We'll input the tracing code, if the method bares a context as its firts param.
+		g.p("%s, span := %s.tracer.Start(%v, %q)", ctxArg, idRecv, ctxArg, m.Name)
+		g.p("defer span.End()")
+	}
 
 	var callArgs string
 	if m.Variadic == nil {
