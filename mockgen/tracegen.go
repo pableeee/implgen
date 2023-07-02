@@ -122,6 +122,9 @@ func (g *generator) GenerateTracedMethod(mockType string, m *model.Method, pkgOv
 	argTypes := g.getArgTypes(m, pkgOverride)
 	argString := makeArgString(argNames, argTypes)
 
+	// flag as context method, if the firt argument is a context.
+	isContextMethod := len(argNames) > 0 && argTypes[0] == "context.Context"
+
 	rets := make([]string, len(m.Out))
 	for i, p := range m.Out {
 		rets[i] = p.Type.String(g.packageMap, pkgOverride)
@@ -136,15 +139,16 @@ func (g *generator) GenerateTracedMethod(mockType string, m *model.Method, pkgOv
 
 	ia := newIdentifierAllocator(argNames)
 	idRecv := ia.allocateIdentifier("t")
+	idSpan := ia.allocateIdentifier("span")
 
 	g.p("// %v traced base method.", m.Name)
 	g.p("func (%v *%v%v) %v(%v)%v {", idRecv, mockType, shortTp, m.Name, argString, retString)
 	g.in()
 
-	if len(argNames) > 0 && argTypes[0] == "context.Context" {
+	if isContextMethod {
 		ctxArg := argNames[0]
 		// We'll input the tracing code, if the method bares a context as its firts param.
-		g.p("%s, span := %s.tracer.Start(%v, %q)", ctxArg, idRecv, ctxArg, m.Name)
+		g.p("%s, %v := %s.tracer.Start(%v, %q)", ctxArg, idSpan, idRecv, ctxArg, m.Name)
 		g.p("defer span.End()")
 	}
 
@@ -178,7 +182,30 @@ func (g *generator) GenerateTracedMethod(mockType string, m *model.Method, pkgOv
 		g.p(`%s.delegate.%s(%s)`, idRecv, m.Name, callArgs)
 	} else {
 		// idRet := ia.allocateIdentifier("ret")
-		g.p(`return %s.delegate.%s(%s)`, idRecv, m.Name, callArgs)
+		returnsError := false
+		errorIndex := -1
+		returns := make([]string, len(rets))
+		for i, r := range rets {
+			returns[i] = ia.allocateIdentifier("ret")
+			if r == "error" {
+				returnsError = true
+				errorIndex = i
+			}
+
+		}
+
+		returnArgsString := strings.Join(returns, ", ")
+		g.p(`%s := %s.delegate.%s(%s)`, returnArgsString, idRecv, m.Name, callArgs)
+
+		if returnsError && isContextMethod {
+			g.p(`if %v != nil {`, returns[errorIndex])
+			g.in()
+			g.p("%v.RecordError(%v)", idSpan, returns[errorIndex])
+			g.p("%v.SetStatus(codes.Error, %v.Error())", idSpan, returns[errorIndex])
+			g.out()
+			g.p("}")
+		}
+		g.p(`return %s`, returnArgsString)
 
 		// Go does not allow "naked" type assertions on nil values, so we use the two-value form here.
 		// The value of that is either (x.(T), true) or (Z, false), where Z is the zero value for T.
