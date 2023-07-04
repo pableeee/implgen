@@ -35,7 +35,7 @@ func (g *generator) tracedName(typeName string) string {
 	return "Traced" + typeName
 }
 
-func (g *generator) GenerateTracedInterface(intf *model.Interface, outputPackagePath string) error {
+func generateTracedInterface(g *generator, intf *model.Interface, outputPackagePath string) error {
 	mockType := g.mockName(intf.Name)
 	longTp, shortTp := g.formattedTypeParams(intf, outputPackagePath)
 
@@ -77,14 +77,6 @@ func (g *generator) GenerateTracedInterface(intf *model.Interface, outputPackage
 	g.p("}")
 	g.p("")
 
-	// g.p("// %vMockRecorder is the mock recorder for %v.", mockType, mockType)
-	// g.p("type %vMockRecorder%v struct {", mockType, longTp)
-	// g.in()
-	// g.p("mock *%v%v", mockType, shortTp)
-	// g.out()
-	// g.p("}")
-	// g.p("")
-
 	g.p("// New%v creates a new trace decorator instance.", mockType)
 	g.p("func New%v%v(ctrl Traced%v) *%v%v {", mockType, longTp, intf.Name, mockType, shortTp)
 	g.in()
@@ -94,29 +86,21 @@ func (g *generator) GenerateTracedInterface(intf *model.Interface, outputPackage
 	g.p("}")
 	g.p("")
 
-	// // XXX: possible name collision here if someone has EXPECT in their interface.
-	// g.p("// EXPECT returns an object that allows the caller to indicate expected use.")
-	// g.p("func (m *%v%v) EXPECT() *%vMockRecorder%v {", mockType, shortTp, mockType, shortTp)
-	// g.in()
-	// g.p("return m.recorder")
-	// g.out()
-	// g.p("}")
-
-	g.GenerateTracedMethods(mockType, intf, outputPackagePath, shortTp)
+	generateTracedMethods(g, mockType, intf, outputPackagePath, shortTp)
 
 	return nil
 }
-func (g *generator) GenerateTracedMethods(mockType string, intf *model.Interface, pkgOverride, shortTp string) {
+func generateTracedMethods(g *generator, mockType string, intf *model.Interface, pkgOverride, shortTp string) {
 	sort.Sort(byMethodName(intf.Methods))
 	for _, m := range intf.Methods {
 		g.p("")
-		_ = g.GenerateTracedMethod(mockType, m, pkgOverride, shortTp)
+		_ = generateTracedMethod(g, mockType, m, pkgOverride, shortTp)
 	}
 }
 
 // GenerateMockMethod generates a mock method implementation.
 // If non-empty, pkgOverride is the package in which unqualified types reside.
-func (g *generator) GenerateTracedMethod(mockType string, m *model.Method, pkgOverride, shortTp string) error {
+func generateTracedMethod(g *generator, mockType string, m *model.Method, pkgOverride, shortTp string) error {
 	argNames := g.getArgNames(m)
 	argTypes := g.getArgTypes(m, pkgOverride)
 	argString := makeArgString(argNames, argTypes)
@@ -160,16 +144,6 @@ func (g *generator) GenerateTracedMethod(mockType string, m *model.Method, pkgOv
 			callArgs = strings.Join(argNames, ", ")
 		}
 	} else {
-		// Non-trivial. The generated code must build a []interface{},
-		// but the variadic argument may be any type.
-		// idVarArgs := ia.allocateIdentifier("varargs")
-		// idVArg := ia.allocateIdentifier("a")
-		// g.p("%s := []interface{}{%s}", idVarArgs, strings.Join(argNames[:len(argNames)-1], ", "))
-		// g.p("for _, %s := range %s {", idVArg, argNames[len(argNames)-1])
-		// g.in()
-		// g.p("%s = append(%s, %s)", idVarArgs, idVarArgs, idVArg)
-		// g.out()
-		// g.p("}")
 		switch {
 		case len(argNames) > 1:
 			callArgs = strings.Join(argNames[0:len(argNames)-1], ", ") + ", " + argNames[len(argNames)-1] + "..."
@@ -183,7 +157,6 @@ func (g *generator) GenerateTracedMethod(mockType string, m *model.Method, pkgOv
 	if len(m.Out) == 0 {
 		g.p(`%s.delegate.%s(%s)`, idRecv, m.Name, callArgs)
 	} else {
-		// idRet := ia.allocateIdentifier("ret")
 		returnsError := false
 		errorIndex := -1
 		returns := make([]string, len(rets))
@@ -209,15 +182,6 @@ func (g *generator) GenerateTracedMethod(mockType string, m *model.Method, pkgOv
 		}
 		g.p(`return %s`, returnArgsString)
 
-		// Go does not allow "naked" type assertions on nil values, so we use the two-value form here.
-		// The value of that is either (x.(T), true) or (Z, false), where Z is the zero value for T.
-		// Happily, this coincides with the semantics we want here.
-		// retNames := make([]string, len(rets))
-		// for i, t := range rets {
-		// 	retNames[i] = ia.allocateIdentifier(fmt.Sprintf("ret%d", i))
-		// 	g.p("%s, _ := %s[%d].(%s)", retNames[i], idRet, i, t)
-		// }
-		// g.p("return " + strings.Join(retNames, ", "))
 	}
 
 	g.out()
