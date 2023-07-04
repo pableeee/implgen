@@ -68,6 +68,7 @@ var (
 	imports                = flag.String("imports", "", "(source mode) Comma-separated name=path pairs of explicit imports to use.")
 	auxFiles               = flag.String("aux_files", "", "(source mode) Comma-separated pkg=path pairs of auxiliary Go source files.")
 	excludeInterfaces      = flag.String("exclude_interfaces", "", "Comma-separated names of interfaces to be excluded")
+	implType               = flag.String("implementation_type", "mock", "The type of code to generate (mock or trace).")
 
 	debugParser = flag.Bool("debug_parser", false, "Print out parser results only.")
 	showVersion = flag.Bool("version", false, "Print version.")
@@ -163,6 +164,16 @@ func main() {
 
 		g.copyrightHeader = string(header)
 	}
+
+	switch *implType {
+	case "trace":
+		g.gen = generateTracedInterface
+	case "mock":
+		g.gen = generateMockInterface
+	default:
+		g.gen = generateMockInterface
+	}
+
 	if err := g.Generate(pkg, outputPackageName, outputPackagePath); err != nil {
 		log.Fatalf("Failed generating mock: %v", err)
 	}
@@ -253,6 +264,7 @@ type generator struct {
 	copyrightHeader           string
 
 	packageMap map[string]string // map from import path to package name
+	gen        func(*generator, *model.Interface, string) error
 }
 
 func (g *generator) p(format string, args ...any) {
@@ -423,7 +435,7 @@ func (g *generator) Generate(pkg *model.Package, outputPkgName string, outputPac
 	}
 
 	for _, intf := range pkg.Interfaces {
-		if err := g.GenerateTracedInterface(intf, outputPackagePath); err != nil {
+		if err := g.gen(g, intf, outputPackagePath); err != nil {
 			return err
 		}
 	}
