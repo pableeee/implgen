@@ -61,6 +61,7 @@ var (
 	selfPackage     = flag.String("self_package", "", "The full package import path for the generated code. The purpose of this flag is to prevent import cycles in the generated code by trying to include its own package. This can happen if the mock's package is set to one of its inputs (usually the main one) and the output is stdio so mockgen cannot detect the final output package. Setting this flag will then tell mockgen which import to exclude.")
 	writePkgComment = flag.Bool("write_package_comment", true, "Writes package documentation comment (godoc) if true.")
 	copyrightFile   = flag.String("copyright_file", "", "Copyright file used to add copyright header")
+	implType        = flag.String("implementation_type", "mock", "The type of code to generate (mock or trace).")
 
 	debugParser = flag.Bool("debug_parser", false, "Print out parser results only.")
 	showVersion = flag.Bool("version", false, "Print version.")
@@ -156,6 +157,16 @@ func main() {
 
 		g.copyrightHeader = string(header)
 	}
+
+	switch *implType {
+	case "trace":
+		g.gen = generateTracedInterface
+	case "mock":
+		g.gen = generateMockInterface
+	default:
+		g.gen = generateMockInterface
+	}
+
 	if err := g.Generate(pkg, outputPackageName, outputPackagePath); err != nil {
 		log.Fatalf("Failed generating mock: %v", err)
 	}
@@ -228,6 +239,7 @@ type generator struct {
 	copyrightHeader           string
 
 	packageMap map[string]string // map from import path to package name
+	gen        func(*generator, *model.Interface, string) error
 }
 
 func (g *generator) p(format string, args ...interface{}) {
@@ -362,7 +374,7 @@ func (g *generator) Generate(pkg *model.Package, outputPkgName string, outputPac
 	g.p(")")
 
 	for _, intf := range pkg.Interfaces {
-		if err := g.GenerateTracedInterface(intf, outputPackagePath); err != nil {
+		if err := g.gen(g, intf, outputPackagePath); err != nil {
 			return err
 		}
 	}
