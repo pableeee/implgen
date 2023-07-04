@@ -73,7 +73,6 @@ func (g *generator) GenerateTracedInterface(intf *model.Interface, outputPackage
 	g.p("type %v%v struct {", mockType, longTp)
 	g.in()
 	g.p("delegate Traced%v", intf.Name)
-	g.p("tracer     trace.Tracer")
 	g.out()
 	g.p("}")
 	g.p("")
@@ -89,7 +88,7 @@ func (g *generator) GenerateTracedInterface(intf *model.Interface, outputPackage
 	g.p("// New%v creates a new trace decorator instance.", mockType)
 	g.p("func New%v%v(ctrl Traced%v) *%v%v {", mockType, longTp, intf.Name, mockType, shortTp)
 	g.in()
-	g.p(`deco := &%v%v{delegate: ctrl, tracer: otel.Tracer("%s")}`, mockType, shortTp, intf.Name)
+	g.p(`deco := &%v%v{delegate: ctrl}`, mockType, shortTp)
 	g.p("return deco")
 	g.out()
 	g.p("}")
@@ -148,7 +147,10 @@ func (g *generator) GenerateTracedMethod(mockType string, m *model.Method, pkgOv
 	if isContextMethod {
 		ctxArg := argNames[0]
 		// We'll input the tracing code, if the method bares a context as its firts param.
-		g.p("%s, %v := %s.tracer.Start(%v, %q)", ctxArg, idSpan, idRecv, ctxArg, m.Name)
+		idTracer := ia.allocateIdentifier("tracer")
+		// TODO: Fix tracer name (without the 'Mock') & constant initialization.
+		g.p(`%v := otel.Tracer("%s")`, idTracer, mockType)
+		g.p("%s, %v := %v.Start(%v, %q)", ctxArg, idSpan, idTracer, ctxArg, m.Name)
 		g.p("defer span.End()")
 	}
 
