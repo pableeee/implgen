@@ -64,8 +64,8 @@ func generateMockMethods(g *generator, mockType string, intf *model.Interface, p
 }
 
 func generateMockMethod(g *generator, mockType string, m *model.Method, pkgOverride, shortTp string) error {
-	argNames := g.getArgNames(m)
-	argTypes := g.getArgTypes(m, pkgOverride)
+	argNames := g.getArgNames(m, true)
+	argTypes := g.getArgTypes(m, pkgOverride, true)
 	argString := makeArgString(argNames, argTypes)
 
 	rets := make([]string, len(m.Out))
@@ -129,7 +129,7 @@ func generateMockMethod(g *generator, mockType string, m *model.Method, pkgOverr
 }
 
 func generateMockRecorderMethod(g *generator, mockType string, m *model.Method, shortTp string) error {
-	argNames := g.getArgNames(m)
+	argNames := g.getArgNames(m, true)
 
 	var argString string
 	if m.Variadic == nil {
