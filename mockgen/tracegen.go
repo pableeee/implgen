@@ -45,8 +45,8 @@ func generateTracedInterface(g *generator, intf *model.Interface, outputPackageP
 	g.in()
 
 	for _, m := range intf.Methods {
-		argNames := g.getArgNames(m)
-		argTypes := g.getArgTypes(m, outputPackagePath)
+		argNames := g.getArgNames(m, true)
+		argTypes := g.getArgTypes(m, outputPackagePath, true)
 		argString := makeArgString(argNames, argTypes)
 
 		rets := make([]string, len(m.Out))
@@ -101,8 +101,8 @@ func generateTracedMethods(g *generator, mockType string, intf *model.Interface,
 // GenerateMockMethod generates a mock method implementation.
 // If non-empty, pkgOverride is the package in which unqualified types reside.
 func generateTracedMethod(g *generator, mockType string, m *model.Method, pkgOverride, shortTp string) error {
-	argNames := g.getArgNames(m)
-	argTypes := g.getArgTypes(m, pkgOverride)
+	argNames := g.getArgNames(m, true)
+	argTypes := g.getArgTypes(m, pkgOverride, true)
 	argString := makeArgString(argNames, argTypes)
 
 	// flag as context method, if the firt argument is a context.
@@ -190,7 +190,7 @@ func generateTracedMethod(g *generator, mockType string, m *model.Method, pkgOve
 }
 
 func (g *generator) GenerateTracedRecorderMethod(mockType string, m *model.Method, shortTp string) error {
-	argNames := g.getArgNames(m)
+	argNames := g.getArgNames(m, true)
 
 	var argString string
 	if m.Variadic == nil {
