@@ -36,7 +36,7 @@ jobs:
 
     - name: Install mockgen
       run: |
-        go install github.com/pableeee/implge/mockgen
+        go install github.com/pableeee/implgen/mockgen
 
     - name: Run test script
       run: |
