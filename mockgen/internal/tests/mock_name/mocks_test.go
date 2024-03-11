@@ -3,10 +3,10 @@ package mock_names
 import (
 	"testing"
 
-	"go.uber.org/mock/gomock"
-	"go.uber.org/mock/mockgen/internal/tests/mock_name/mocks"
-	"go.uber.org/mock/mockgen/internal/tests/mock_name/post"
-	"go.uber.org/mock/mockgen/internal/tests/mock_name/user"
+	"github.com/pableeee/implgen/gomock"
+	"github.com/pableeee/implgen/mockgen/internal/tests/mock_name/mocks"
+	"github.com/pableeee/implgen/mockgen/internal/tests/mock_name/post"
+	"github.com/pableeee/implgen/mockgen/internal/tests/mock_name/user"
 )
 
 func TestMockNames(t *testing.T) {

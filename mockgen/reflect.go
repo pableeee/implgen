@@ -31,7 +31,7 @@ import (
 	"strings"
 	"text/template"
 
-	"go.uber.org/mock/mockgen/model"
+	"github.com/pableeee/implgen/mockgen/model"
 )
 
 var (
@@ -168,8 +168,8 @@ func runInDir(program []byte, dir string) (*model.Package, error) {
 	if err := cmd.Run(); err != nil {
 		sErr := buf.String()
 		if strings.Contains(sErr, `cannot find package "."`) &&
-			strings.Contains(sErr, "go.uber.org/mock/mockgen/model") {
-			fmt.Fprint(os.Stderr, "Please reference the steps in the README to fix this error:\n\thttps://go.uber.org/mock#reflect-vendoring-error.\n")
+			strings.Contains(sErr, "github.com/pableeee/implgen/mockgen/model") {
+			fmt.Fprint(os.Stderr, "Please reference the steps in the README to fix this error:\n\thttps://github.com/pableeee/implgen#reflect-vendoring-error.\n")
 			return nil, err
 		}
 		return nil, err
@@ -198,7 +198,7 @@ import (
 	"path"
 	"reflect"
 
-	"go.uber.org/mock/mockgen/model"
+	"github.com/pableeee/implgen/mockgen/model"
 
 	pkg_ {{printf "%q" .ImportPath}}
 )

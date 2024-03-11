@@ -12,7 +12,7 @@ package typed_inorder
 import (
 	reflect "reflect"
 
-	gomock "go.uber.org/mock/gomock"
+	gomock "github.com/pableeee/implgen/gomock"
 )
 
 // MockAnimal is a mock of Animal interface.

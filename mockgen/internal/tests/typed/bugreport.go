@@ -5,7 +5,7 @@ package typed
 import (
 	"log"
 
-	"go.uber.org/mock/mockgen/internal/tests/typed/faux"
+	"github.com/pableeee/implgen/mockgen/internal/tests/typed/faux"
 )
 
 // Source is an interface w/ an embedded foreign interface

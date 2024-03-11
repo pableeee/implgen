@@ -20,7 +20,7 @@ package paniccode
 import (
 	"testing"
 
-	"go.uber.org/mock/gomock"
+	"github.com/pableeee/implgen/gomock"
 )
 
 func TestDanger_Panics_Explicit(t *testing.T) {

@@ -12,7 +12,7 @@ package mock_vendor_dep
 import (
 	reflect "reflect"
 
-	gomock "go.uber.org/mock/gomock"
+	gomock "github.com/pableeee/implgen/gomock"
 	present "golang.org/x/tools/present"
 )
 

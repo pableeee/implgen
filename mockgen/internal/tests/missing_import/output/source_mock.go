@@ -12,8 +12,8 @@ package source
 import (
 	reflect "reflect"
 
-	gomock "go.uber.org/mock/gomock"
-	source "go.uber.org/mock/mockgen/internal/tests/missing_import/source"
+	gomock "github.com/pableeee/implgen/gomock"
+	source "github.com/pableeee/implgen/mockgen/internal/tests/missing_import/source"
 )
 
 // MockBar is a mock of Bar interface.

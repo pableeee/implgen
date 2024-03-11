@@ -5,7 +5,7 @@ import (
 	"sort"
 	"strings"
 
-	"go.uber.org/mock/mockgen/model"
+	"github.com/pableeee/implgen/mockgen/model"
 )
 
 func generateMockInterface(g *generator, intf *model.Interface, outputPackagePath string) error {

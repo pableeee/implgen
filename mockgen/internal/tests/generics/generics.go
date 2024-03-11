@@ -1,7 +1,7 @@
 package generics
 
 import (
-	"go.uber.org/mock/mockgen/internal/tests/generics/other"
+	"github.com/pableeee/implgen/mockgen/internal/tests/generics/other"
 	"golang.org/x/exp/constraints"
 )
 

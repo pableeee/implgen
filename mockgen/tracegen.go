@@ -23,7 +23,7 @@ import (
 	"sort"
 	"strings"
 
-	"go.uber.org/mock/mockgen/model"
+	"github.com/pableeee/implgen/mockgen/model"
 )
 
 // The name of the mock type to use for the given interface identifier.

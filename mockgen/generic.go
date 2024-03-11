@@ -14,7 +14,7 @@ import (
 	"go/token"
 	"strings"
 
-	"go.uber.org/mock/mockgen/model"
+	"github.com/pableeee/implgen/mockgen/model"
 )
 
 func getTypeSpecTypeParams(ts *ast.TypeSpec) []*ast.Field {

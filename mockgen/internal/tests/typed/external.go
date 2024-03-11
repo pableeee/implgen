@@ -1,7 +1,7 @@
 package typed
 
 import (
-	"go.uber.org/mock/mockgen/internal/tests/typed/other"
+	"github.com/pableeee/implgen/mockgen/internal/tests/typed/other"
 	"golang.org/x/exp/constraints"
 )
 

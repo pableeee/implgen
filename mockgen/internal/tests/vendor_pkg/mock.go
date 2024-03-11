@@ -12,7 +12,7 @@ package vendor_pkg
 import (
 	reflect "reflect"
 
-	gomock "go.uber.org/mock/gomock"
+	gomock "github.com/pableeee/implgen/gomock"
 )
 
 // MockElem is a mock of Elem interface.

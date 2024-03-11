@@ -10,7 +10,7 @@
 package empty_interface
 
 import (
-	gomock "go.uber.org/mock/gomock"
+	gomock "github.com/pableeee/implgen/gomock"
 )
 
 // MockEmpty is a mock of Empty interface.

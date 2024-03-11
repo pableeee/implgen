@@ -7,9 +7,9 @@ package source
 import (
 	reflect "reflect"
 
-	gomock "go.uber.org/mock/gomock"
-	typed "go.uber.org/mock/mockgen/internal/tests/typed"
-	other "go.uber.org/mock/mockgen/internal/tests/typed/other"
+	gomock "github.com/pableeee/implgen/gomock"
+	typed "github.com/pableeee/implgen/mockgen/internal/tests/typed"
+	other "github.com/pableeee/implgen/mockgen/internal/tests/typed/other"
 )
 
 // MockBar is a mock of Bar interface.

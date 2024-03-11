@@ -12,7 +12,7 @@ package const_length
 import (
 	reflect "reflect"
 
-	gomock "go.uber.org/mock/gomock"
+	gomock "github.com/pableeee/implgen/gomock"
 )
 
 // MockI is a mock of I interface.

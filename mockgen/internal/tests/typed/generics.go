@@ -1,6 +1,6 @@
 package typed
 
-import "go.uber.org/mock/mockgen/internal/tests/typed/other"
+import "github.com/pableeee/implgen/mockgen/internal/tests/typed/other"
 
 //go:generate mockgen --source=generics.go --destination=source/mock_generics_test.go --package source -typed
 ////go:generate mockgen --destination=reflect/mock_test.go --package reflect . Bar,Bar2

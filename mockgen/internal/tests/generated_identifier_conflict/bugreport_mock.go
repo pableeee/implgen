@@ -12,7 +12,7 @@ package bugreport
 import (
 	reflect "reflect"
 
-	gomock "go.uber.org/mock/gomock"
+	gomock "github.com/pableeee/implgen/gomock"
 )
 
 // MockExample is a mock of Example interface.

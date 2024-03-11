@@ -16,5 +16,5 @@ interface that can be mocked with GoMock. The interesting files are:
 To run the test,
 
 ```bash
-go test go.uber.org/mock/sample
+go test github.com/pableeee/implgen/sample
 ```

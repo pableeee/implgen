@@ -12,9 +12,9 @@ package source
 import (
 	reflect "reflect"
 
-	gomock "go.uber.org/mock/gomock"
-	generics "go.uber.org/mock/mockgen/internal/tests/generics"
-	other "go.uber.org/mock/mockgen/internal/tests/generics/other"
+	gomock "github.com/pableeee/implgen/gomock"
+	generics "github.com/pableeee/implgen/mockgen/internal/tests/generics"
+	other "github.com/pableeee/implgen/mockgen/internal/tests/generics/other"
 	constraints "golang.org/x/exp/constraints"
 )
 

@@ -3,7 +3,7 @@ package typed
 import (
 	"testing"
 
-	"go.uber.org/mock/gomock"
+	"github.com/pableeee/implgen/gomock"
 )
 
 // TestValidInterface assesses whether or not the generated mock is valid

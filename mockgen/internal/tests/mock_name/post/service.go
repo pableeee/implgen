@@ -1,7 +1,7 @@
 package post
 
 import (
-	"go.uber.org/mock/mockgen/internal/tests/mock_name/user"
+	"github.com/pableeee/implgen/mockgen/internal/tests/mock_name/user"
 )
 
 type Post struct {

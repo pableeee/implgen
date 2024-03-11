@@ -17,7 +17,7 @@ package faux
 import (
 	"log"
 
-	"go.uber.org/mock/mockgen/internal/tests/import_embedded_interface/other/ersatz"
+	"github.com/pableeee/implgen/mockgen/internal/tests/import_embedded_interface/other/ersatz"
 )
 
 type Foreign interface {

@@ -3,8 +3,8 @@ package greeter
 import (
 	"testing"
 
-	"go.uber.org/mock/gomock"
-	"go.uber.org/mock/mockgen/internal/tests/custom_package_name/client/v1"
+	"github.com/pableeee/implgen/gomock"
+	"github.com/pableeee/implgen/mockgen/internal/tests/custom_package_name/client/v1"
 )
 
 func TestGreeter_Greet(t *testing.T) {
