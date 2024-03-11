@@ -4,11 +4,11 @@
 ---
 release:
   github:
-    owner: uber-go
-    name: mock
+    owner: pableeee
+    name: implgen
 
 builds:
-  - binary: mockgen
+  - binary: implgen
     goos:
       - darwin
       - windows
