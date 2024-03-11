@@ -25,7 +25,7 @@ jobs:
     - name: Prepare release
       run: |
         set -eou pipefail
-        make bin/extract-changelog
+        # make bin/extract-changelog
 
         # Extract target version number from the git tag and post it to
         # GITHUB_ENV to make it accessible via env.VERSION in other steps.
@@ -39,7 +39,7 @@ jobs:
         # release step.
         echo "Release notes:"
         echo "----"
-        bin/extract-changelog $VERSION | tee changes.$VERSION.txt
+        # bin/extract-changelog $VERSION | tee changes.$VERSION.txt
         echo "----"
 
     - name: Release
