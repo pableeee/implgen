@@ -36,7 +36,7 @@ jobs:
 
     - name: Install mockgen
       run: |
-        go install go.uber.org/mock/mockgen
+        go install github.com/pableeee/implge/mockgen
 
     - name: Run test script
       run: |

@@ -23,7 +23,7 @@ the two most recent releases of Go.
 Install the `mockgen` tool.
 
 ```
-go install go.uber.org/mock/mockgen@latest
+go install github.com/pableeee/implge/mockgen@latest
 ```
 
 To ensure it was installed correctly, use:
