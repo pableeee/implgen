@@ -27,21 +27,21 @@ import (
 )
 
 // The name of the mock type to use for the given interface identifier.
-func (g *generator) tracedName(typeName string) string {
+func (g *generator) metricsName(typeName string) string {
 	if mockName, ok := g.mockNames[typeName]; ok {
 		return mockName
 	}
 
-	return "Traced" + typeName + "Impl"
+	return "Metrics" + typeName + "Impl"
 }
 
-func generateTracedInterface(g *generator, intf *model.Interface, outputPackagePath string) error {
-	mockType := g.tracedName(intf.Name)
+func generateMetricsInterface(g *generator, intf *model.Interface, outputPackagePath string) error {
+	mockType := g.metricsName(intf.Name)
 	longTp, shortTp := g.formattedTypeParams(intf, outputPackagePath)
 
 	g.p("")
 	g.p("// %v is a tracing decorator of %v interface.", mockType, intf.Name)
-	g.p("type Traced%v interface {", intf.Name)
+	g.p("type Metrics%v interface {", intf.Name)
 	g.in()
 
 	for _, m := range intf.Methods {
@@ -69,44 +69,57 @@ func generateTracedInterface(g *generator, intf *model.Interface, outputPackageP
 	g.p("")
 
 	g.p("")
-	g.p("// %v is a tracing decorator of %v interface.", mockType, intf.Name)
+	g.p("// %v is a metrics decorator of %v interface.", mockType, intf.Name)
 	g.p("type %v%v struct {", mockType, longTp)
 	g.in()
-	g.p("delegate Traced%v", intf.Name)
+	g.p("duration metrics.Histogram")
+	g.p("delegate Metrics%v", intf.Name)
 	g.out()
 	g.p("}")
 	g.p("")
 
-	g.p("// New%v creates a new trace decorator instance.", mockType)
-	g.p("func New%v%v(ctrl Traced%v) *%v%v {", mockType, longTp, intf.Name, mockType, shortTp)
+	g.p("// New%v creates a new metrics decorator instance.", mockType)
+	g.p("func New%v%v(ctrl Metrics%v) *%v%v {", mockType, longTp, intf.Name, mockType, shortTp)
 	g.in()
-	g.p(`deco := &%v%v{delegate: ctrl}`, mockType, shortTp)
+
+	g.p(`histogram := prometheus.NewHistogramFrom(stdprometheus.HistogramOpts{`)
+	g.in()
+	g.p(`Subsystem: "%v",`, intf.Name)
+	g.p(`Name: "duration_milliseconds",`)
+	g.p(`Help: "Seconds spent quering the rate limiter",`)
+	g.p(`Buckets: stdprometheus.DefBuckets,`)
+	g.out()
+	g.p(`}, []string{"error"})`)
+
+	g.p(`deco := &%v%v{`, mockType, shortTp)
+	g.in()
+	g.p(`delegate: ctrl,`)
+	g.p(`duration: histogram,`)
+	g.out()
+	g.p(`}`)
 	g.p("return deco")
 	g.out()
 	g.p("}")
 	g.p("")
 
-	generateTracedMethods(g, mockType, intf, outputPackagePath, shortTp)
+	generateMetricsMethods(g, mockType, intf, outputPackagePath, shortTp)
 
 	return nil
 }
-func generateTracedMethods(g *generator, mockType string, intf *model.Interface, pkgOverride, shortTp string) {
+func generateMetricsMethods(g *generator, mockType string, intf *model.Interface, pkgOverride, shortTp string) {
 	sort.Sort(byMethodName(intf.Methods))
 	for _, m := range intf.Methods {
 		g.p("")
-		_ = generateTracedMethod(g, mockType, m, pkgOverride, shortTp)
+		_ = generateMetricsMethod(g, mockType, m, pkgOverride, shortTp)
 	}
 }
 
 // GenerateMockMethod generates a mock method implementation.
 // If non-empty, pkgOverride is the package in which unqualified types reside.
-func generateTracedMethod(g *generator, mockType string, m *model.Method, pkgOverride, shortTp string) error {
+func generateMetricsMethod(g *generator, mockType string, m *model.Method, pkgOverride, shortTp string) error {
 	argNames := g.getArgNames(m, true)
 	argTypes := g.getArgTypes(m, pkgOverride, true)
 	argString := makeArgString(argNames, argTypes)
-
-	// flag as context method, if the firt argument is a context.
-	isContextMethod := len(argNames) > 0 && argTypes[0] == "context.Context"
 
 	rets := make([]string, len(m.Out))
 	for i, p := range m.Out {
@@ -122,21 +135,14 @@ func generateTracedMethod(g *generator, mockType string, m *model.Method, pkgOve
 
 	ia := newIdentifierAllocator(argNames)
 	idRecv := ia.allocateIdentifier("t")
-	idSpan := ia.allocateIdentifier("span")
+	idBegin := ia.allocateIdentifier("begin")
+	idTook := ia.allocateIdentifier("took")
+	idFailed := ia.allocateIdentifier("failed")
 
-	g.p("// %v traced base method.", m.Name)
+	g.p("// %v Metrics base method.", m.Name)
 	g.p("func (%v *%v%v) %v(%v)%v {", idRecv, mockType, shortTp, m.Name, argString, retString)
 	g.in()
-
-	if isContextMethod {
-		ctxArg := argNames[0]
-		// We'll input the tracing code, if the method bares a context as its firts param.
-		idTracer := ia.allocateIdentifier("tracer")
-		// TODO: Fix tracer name (without the 'Mock') & constant initialization.
-		g.p(`%v := otel.Tracer("%s")`, idTracer, mockType)
-		g.p("%s, %v := %v.Start(%v, %q)", ctxArg, idSpan, idTracer, ctxArg, m.Name)
-		g.p("defer span.End()")
-	}
+	g.p("%v := time.Now()", idBegin)
 
 	var callArgs string
 	if m.Variadic == nil {
@@ -154,8 +160,12 @@ func generateTracedMethod(g *generator, mockType string, m *model.Method, pkgOve
 		}
 
 	}
+
+	g.p(`%v := "N/A"`, idFailed)
 	if len(m.Out) == 0 {
 		g.p(`%s.delegate.%s(%s)`, idRecv, m.Name, callArgs)
+		g.p("%v := time.Since(%v)", idTook, idBegin)
+		g.p(`%v.duration.With("error",%v).Observe(%v.Seconds())`, idRecv, idFailed, idTook)
 	} else {
 		returnsError := false
 		errorIndex := -1
@@ -171,15 +181,17 @@ func generateTracedMethod(g *generator, mockType string, m *model.Method, pkgOve
 
 		returnArgsString := strings.Join(returns, ", ")
 		g.p(`%s := %s.delegate.%s(%s)`, returnArgsString, idRecv, m.Name, callArgs)
+		g.p("%v := time.Since(%v)", idTook, idBegin)
 
-		if returnsError && isContextMethod {
+		if returnsError {
+			g.p(`%v = "false"`, idFailed)
 			g.p(`if %v != nil {`, returns[errorIndex])
 			g.in()
-			g.p("%v.RecordError(%v)", idSpan, returns[errorIndex])
-			g.p("%v.SetStatus(codes.Error, %v.Error())", idSpan, returns[errorIndex])
+			g.p(`%v = "true"`, idFailed)
 			g.out()
 			g.p("}")
 		}
+		g.p(`%v.duration.With("error",%v).Observe(%v.Seconds())`, idRecv, idFailed, idTook)
 		g.p(`return %s`, returnArgsString)
 
 	}
@@ -189,7 +201,7 @@ func generateTracedMethod(g *generator, mockType string, m *model.Method, pkgOve
 	return nil
 }
 
-func (g *generator) GenerateTracedRecorderMethod(mockType string, m *model.Method, shortTp string) error {
+func (g *generator) GenerateMetricsRecorderMethod(mockType string, m *model.Method, shortTp string) error {
 	argNames := g.getArgNames(m, true)
 
 	var argString string

@@ -20,3 +20,5 @@ mockgen/mockgen
 
 # vendor directory used for IDEs
 /vendor
+
+/tmp

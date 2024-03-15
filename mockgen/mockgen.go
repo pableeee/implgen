@@ -86,6 +86,7 @@ func main() {
 	var pkg *model.Package
 	var err error
 	var packageName string
+	var outputPrefix string
 	if *source != "" {
 		pkg, err = sourceMode(*source)
 	} else {
@@ -114,13 +115,6 @@ func main() {
 	if *debugParser {
 		pkg.Print(os.Stdout)
 		return
-	}
-
-	outputPackageName := *packageOut
-	if outputPackageName == "" {
-		// pkg.Name in reflect mode is the base name of the import path,
-		// which might have characters that are illegal to have in package names.
-		outputPackageName = "mock_" + sanitize(pkg.Name)
 	}
 
 	// outputPackagePath represents the fully qualified name of the package of
@@ -166,12 +160,23 @@ func main() {
 	}
 
 	switch *implType {
+	case "metrics":
+		g.gen = generateMetricsInterface
+		outputPrefix = "metrics"
 	case "trace":
 		g.gen = generateTracedInterface
+		outputPrefix = "trace"
 	case "mock":
-		g.gen = generateMockInterface
 	default:
 		g.gen = generateMockInterface
+		outputPrefix = "mock"
+	}
+
+	outputPackageName := *packageOut
+	if outputPackageName == "" {
+		// pkg.Name in reflect mode is the base name of the import path,
+		// which might have characters that are illegal to have in package names.
+		outputPackageName = fmt.Sprintf("%s_", outputPrefix) + sanitize(pkg.Name)
 	}
 
 	if err := g.Generate(pkg, outputPackageName, outputPackagePath); err != nil {
@@ -405,6 +410,16 @@ func (g *generator) Generate(pkg *model.Package, outputPkgName string, outputPac
 
 		g.packageMap[pth] = pkgName
 		localNames[pkgName] = true
+	}
+
+	// I want to force input based imports if the parser
+	// is not adding them on its own.
+	for k, v := range definedImports {
+		if _, found := g.packageMap[k]; !found {
+			// forcing the input when not found
+			g.packageMap[k] = v
+			localNames[k] = true
+		}
 	}
 
 	if *writePkgComment {
