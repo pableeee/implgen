@@ -64,6 +64,7 @@ var (
 	writeSourceComment     = flag.Bool("write_source_comment", true, "Writes original file (source mode) or interface names (reflect mode) comment if true.")
 	writeGenerateDirective = flag.Bool("write_generate_directive", false, "Add //go:generate directive to regenerate the mock")
 	copyrightFile          = flag.String("copyright_file", "", "Copyright file used to add copyright header")
+	buildConstraint        = flag.String("build_constraint", "", "If non-empty, added as //go:build <constraint>")
 	typed                  = flag.Bool("typed", false, "Generate Type-safe 'Return', 'Do', 'DoAndReturn' function")
 	imports                = flag.String("imports", "", "(source mode) Comma-separated name=path pairs of explicit imports to use.")
 	auxFiles               = flag.String("aux_files", "", "(source mode) Comma-separated pkg=path pairs of auxiliary Go source files.")
@@ -138,7 +139,9 @@ func main() {
 		}
 	}
 
-	g := new(generator)
+	g := &generator{
+		buildConstraint: *buildConstraint,
+	}
 	if *source != "" {
 		g.filename = *source
 	} else {
@@ -267,6 +270,7 @@ type generator struct {
 	destination               string            // may be empty
 	srcPackage, srcInterfaces string            // may be empty
 	copyrightHeader           string
+	buildConstraint           string // may be empty
 
 	packageMap map[string]string // map from import path to package name
 	gen        func(*generator, *model.Interface, string) error
@@ -320,6 +324,12 @@ func (g *generator) Generate(pkg *model.Package, outputPkgName string, outputPac
 		for _, line := range lines {
 			g.p("// %s", line)
 		}
+		g.p("")
+	}
+
+	if g.buildConstraint != "" {
+		g.p("//go:build %s", g.buildConstraint)
+		// https://pkg.go.dev/cmd/go#hdr-Build_constraints:~:text=a%20build%20constraint%20should%20be%20followed%20by%20a%20blank%20line
 		g.p("")
 	}
 
