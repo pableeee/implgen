@@ -18,8 +18,19 @@ func getString(x any) string {
 	case mockedStringer:
 		return fmt.Sprintf("%T", v)
 	case fmt.Stringer:
-		return v.String()
+		return safeString(v)
 	default:
 		return fmt.Sprintf("%v", v)
 	}
+}
+
+// safeString calls String() with panic recovery to handle nil receivers
+func safeString(s fmt.Stringer) (result string) {
+	defer func() {
+		if r := recover(); r != nil {
+			// If String() panicked (e.g., nil receiver), use fmt.Sprintf instead
+			result = fmt.Sprintf("%v", s)
+		}
+	}()
+	return s.String()
 }
