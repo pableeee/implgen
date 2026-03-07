@@ -34,19 +34,16 @@ func TestGenerateTracedInterface_StructAndConstructor(t *testing.T) {
 
 	out := g.buf.String()
 
-	if !strings.Contains(out, "type StoreAttributeExtractor interface {") {
-		t.Error("expected StoreAttributeExtractor interface declaration")
-	}
 	if !strings.Contains(out, "type TracedStoreImpl struct {") {
 		t.Error("expected TracedStoreImpl struct declaration")
 	}
-	if !strings.Contains(out, "delegate  Store") {
+	if !strings.Contains(out, "delegate    Store") {
 		t.Error("expected delegate field of original type Store")
 	}
-	if !strings.Contains(out, "extractor StoreAttributeExtractor") {
-		t.Error("expected extractor field of type StoreAttributeExtractor")
+	if !strings.Contains(out, "extraAttrs  func(method string, args ...any) []attribute.KeyValue") {
+		t.Error("expected extraAttrs func field")
 	}
-	if !strings.Contains(out, "func NewTracedStoreImpl(delegate Store, extractor StoreAttributeExtractor) *TracedStoreImpl {") {
+	if !strings.Contains(out, "func NewTracedStoreImpl(delegate Store, extraAttrs func(method string, args ...any) []attribute.KeyValue) *TracedStoreImpl {") {
 		t.Error("expected NewTracedStoreImpl constructor")
 	}
 }
@@ -79,7 +76,7 @@ func TestGenerateTracedInterface_ContextMethod_SpanLifecycle(t *testing.T) {
 	}
 }
 
-func TestGenerateTracedInterface_ContextMethod_ExtractorCall(t *testing.T) {
+func TestGenerateTracedInterface_ContextMethod_ExtraAttrsCall(t *testing.T) {
 	g := tracedGenerator()
 	intf := &model.Interface{Name: "Repo"}
 	intf.AddMethod(&model.Method{
@@ -96,14 +93,11 @@ func TestGenerateTracedInterface_ContextMethod_ExtractorCall(t *testing.T) {
 
 	out := g.buf.String()
 
-	if !strings.Contains(out, "if t.extractor != nil {") {
-		t.Error("expected nil extractor guard")
+	if !strings.Contains(out, "if t.extraAttrs != nil {") {
+		t.Error("expected nil extraAttrs guard")
 	}
-	if !strings.Contains(out, "span.SetAttributes(") {
-		t.Error("expected span.SetAttributes call with extractor output")
-	}
-	if !strings.Contains(out, ".extractor.Save(") {
-		t.Error("expected extractor.Save call forwarding method args")
+	if !strings.Contains(out, `span.SetAttributes(t.extraAttrs("Save", ctx, val)...)`) {
+		t.Error(`expected span.SetAttributes(t.extraAttrs("Save", ctx, val)...)`)
 	}
 }
 
@@ -142,7 +136,6 @@ func TestGenerateTracedInterface_ContextMethodNoError_NoRecordError(t *testing.T
 			contextParam("ctx"),
 			{Name: "msg", Type: model.PredeclaredType("string")},
 		},
-		// returns int, not error
 		Out: []*model.Parameter{
 			{Type: model.PredeclaredType("int")},
 		},
@@ -205,5 +198,9 @@ func TestGenerateTracedInterface_VariadicMethod(t *testing.T) {
 
 	if !strings.Contains(out, "args...") {
 		t.Error("expected variadic args forwarded with ...")
+	}
+	// extraAttrs receives the slice, not expanded
+	if !strings.Contains(out, `extraAttrs("Log", ctx, args)`) {
+		t.Error("expected extraAttrs to receive variadic slice, not expanded args")
 	}
 }

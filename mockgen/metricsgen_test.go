@@ -22,23 +22,20 @@ func TestGenerateMetricsInterface_StructAndConstructor(t *testing.T) {
 
 	out := g.buf.String()
 
-	if !strings.Contains(out, "type StoreLabelExtractor interface {") {
-		t.Error("expected StoreLabelExtractor interface declaration")
-	}
 	if !strings.Contains(out, "type MetricsStoreImpl struct {") {
 		t.Error("expected MetricsStoreImpl struct declaration")
 	}
 	if !strings.Contains(out, "pingDuration metrics.Histogram") {
 		t.Error("expected per-method pingDuration histogram field")
 	}
-	if !strings.Contains(out, "delegate  Store") {
+	if !strings.Contains(out, "delegate     Store") {
 		t.Error("expected delegate field of original type Store")
 	}
-	if !strings.Contains(out, "extractor StoreLabelExtractor") {
-		t.Error("expected extractor field of type StoreLabelExtractor")
+	if !strings.Contains(out, "extraLabels  func(method string, args ...any) []string") {
+		t.Error("expected extraLabels func field")
 	}
-	if !strings.Contains(out, "func NewMetricsStoreImpl(delegate Store, extractor StoreLabelExtractor, extraLabelNames ...string) *MetricsStoreImpl {") {
-		t.Error("expected NewMetricsStoreImpl constructor")
+	if !strings.Contains(out, "func NewMetricsStoreImpl(delegate Store, extraLabels func(method string, args ...any) []string, extraLabelNames ...string) *MetricsStoreImpl {") {
+		t.Error("expected NewMetricsStoreImpl constructor signature")
 	}
 }
 
@@ -114,7 +111,6 @@ func TestGenerateMetricsInterface_ErrorReturn_LabelsTrueOrFalse(t *testing.T) {
 	if !strings.Contains(out, `"true"`) {
 		t.Error(`expected failed = "true" inside error check`)
 	}
-	// Confirm it's the error check driving this, not just literal strings
 	if !strings.Contains(out, "!= nil") {
 		t.Error("expected nil error check to gate the label")
 	}
@@ -137,7 +133,6 @@ func TestGenerateMetricsInterface_NoErrorReturn_LabelsNA(t *testing.T) {
 	if !strings.Contains(out, `"N/A"`) {
 		t.Error(`expected failed = "N/A" when method does not return error`)
 	}
-	// The only != nil allowed is the extractor guard; there must be no error return nil-check.
 	if strings.Contains(out, `"true"`) || strings.Contains(out, `"false"`) {
 		t.Error("should not emit error label values when there is no error return")
 	}
@@ -160,14 +155,12 @@ func TestGenerateMetricsInterface_NoReturnMethod_ObservesAndReturnsNothing(t *te
 	if !strings.Contains(out, ".Observe(") {
 		t.Error("expected Observe even when method returns nothing")
 	}
-	// The method body should not have a return statement; the constructor's
-	// "return &..." is fine, but the Notify method itself must not return.
 	if strings.Contains(out, "return t.delegate") || strings.Contains(out, "return ret") {
 		t.Error("should not emit return statement in method body when method has no return values")
 	}
 }
 
-func TestGenerateMetricsInterface_ExtractorCall(t *testing.T) {
+func TestGenerateMetricsInterface_ExtraLabelsCall(t *testing.T) {
 	g := metricsGenerator()
 	intf := &model.Interface{Name: "Svc"}
 	intf.AddMethod(&model.Method{
@@ -181,11 +174,11 @@ func TestGenerateMetricsInterface_ExtractorCall(t *testing.T) {
 
 	out := g.buf.String()
 
-	if !strings.Contains(out, "if t.extractor != nil {") {
-		t.Error("expected nil extractor guard")
+	if !strings.Contains(out, "if t.extraLabels != nil {") {
+		t.Error("expected nil extraLabels guard")
 	}
-	if !strings.Contains(out, ".extractor.Call(") {
-		t.Error("expected extractor.Call forwarding method args")
+	if !strings.Contains(out, `t.extraLabels("Call", id)`) {
+		t.Error(`expected extraLabels("Call", id) call`)
 	}
 	if !strings.Contains(out, `[]string{"error",`) {
 		t.Error("expected base label slice starting with error key")
@@ -212,5 +205,9 @@ func TestGenerateMetricsInterface_VariadicMethod(t *testing.T) {
 
 	if !strings.Contains(out, "args...") {
 		t.Error("expected variadic args forwarded with ...")
+	}
+	// extraLabels receives the slice, not expanded
+	if !strings.Contains(out, `extraLabels("Printf", format, args)`) {
+		t.Error("expected extraLabels to receive variadic slice, not expanded args")
 	}
 }

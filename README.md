@@ -62,15 +62,19 @@ Generated output for an interface `Foo`:
 ```go
 // TracedFooImpl is a tracing decorator of Foo interface.
 type TracedFooImpl struct {
-    delegate TracedFoo
+    delegate    Foo
+    extraAttrs  func(method string, args ...any) []attribute.KeyValue
 }
 
-func NewTracedFooImpl(ctrl TracedFoo) *TracedFooImpl { ... }
+func NewTracedFooImpl(delegate Foo, extraAttrs func(method string, args ...any) []attribute.KeyValue) *TracedFooImpl
 
 func (t *TracedFooImpl) DoSomething(ctx context.Context, arg string) error {
-    tracer := otel.Tracer("TracedFooImpl")
+    tracer := otel.Tracer("Foo")
     ctx, span := tracer.Start(ctx, "DoSomething")
     defer span.End()
+    if t.extraAttrs != nil {
+        span.SetAttributes(t.extraAttrs("DoSomething", ctx, arg)...)
+    }
     ret := t.delegate.DoSomething(ctx, arg)
     if ret != nil {
         span.RecordError(ret)
@@ -80,12 +84,53 @@ func (t *TracedFooImpl) DoSomething(ctx context.Context, arg string) error {
 }
 ```
 
+Pass `nil` as `extraAttrs` to disable custom attributes. When non-nil, use the `method` argument to dispatch per-method logic:
+
+```go
+traced := NewTracedFooImpl(realFoo, func(method string, args ...any) []attribute.KeyValue {
+    switch method {
+    case "DoSomething":
+        return []attribute.KeyValue{attribute.String("arg", args[1].(string))}
+    }
+    return nil
+})
+```
+
 ### Metrics decorator
 
-Generates a struct that wraps the interface and records a Prometheus histogram of call duration for every method, labeled with `error=true/false`. An optional `FooLabelExtractor` interface lets callers attach additional label key-value pairs per call for finer segmentation.
+Generates a struct that wraps the interface and records a Prometheus histogram of call duration for every method, labeled with `error=true/false`.
 
 ```bash
 mockgen -source=foo.go -destination=metrics_foo.go -implementation_type=metrics
+```
+
+Generated output for an interface `Foo`:
+
+```go
+// MetricsFooImpl is a metrics decorator of Foo interface.
+type MetricsFooImpl struct {
+    doSomethingDuration  metrics.Histogram
+    delegate             Foo
+    extraLabels          func(method string, args ...any) []string
+}
+
+func NewMetricsFooImpl(
+    delegate Foo,
+    extraLabels func(method string, args ...any) []string,
+    extraLabelNames ...string,
+) *MetricsFooImpl
+```
+
+Pass `nil` as `extraLabels` to use only the built-in `error` label. When non-nil, declare the extra label keys up front (Prometheus requires a fixed label set at registration time):
+
+```go
+metrics := NewMetricsFooImpl(realFoo, func(method string, args ...any) []string {
+    switch method {
+    case "DoSomething":
+        return []string{"region", args[1].(string)}
+    }
+    return []string{"region", "unknown"}
+}, "region")
 ```
 
 ### Logging decorator
@@ -94,6 +139,11 @@ Generates a struct that wraps the interface and logs every method call and its o
 
 ```bash
 mockgen -source=foo.go -destination=log_foo.go -implementation_type=log
+```
+
+```go
+// Pass nil to fall back to slog.Default().
+logged := NewLoggedFooImpl(realFoo, slog.New(slog.NewJSONHandler(os.Stdout, nil)))
 ```
 
 ## Flags

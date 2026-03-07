@@ -34,44 +34,29 @@ func generateTracedInterface(g *generator, intf *model.Interface, outputPackageP
 	mockType := g.tracedName(intf.Name)
 	longTp, shortTp := g.formattedTypeParams(intf, outputPackagePath)
 
-	// Sort methods once; used for extractor interface, struct, constructor, and method bodies.
+	// Sort methods once.
 	sort.Sort(byMethodName(intf.Methods))
 
-	// Attribute extractor interface.
+	// Struct with delegate (original interface) and extraAttrs func.
 	g.p("")
-	g.p("// %vAttributeExtractor allows callers to attach custom span attributes per call.", intf.Name)
-	g.p("// Each method receives the same arguments as the wrapped interface and returns")
-	g.p("// additional OpenTelemetry attributes to set on the span.")
-	g.p("// Pass nil to New%v to disable custom attributes.", mockType)
-	g.p("type %vAttributeExtractor%v interface {", intf.Name, longTp)
-	g.in()
-	for _, m := range intf.Methods {
-		argNames := g.getArgNames(m, true)
-		argTypes := g.getArgTypes(m, outputPackagePath, true)
-		argString := makeArgString(argNames, argTypes)
-		g.p("%s(%s) []attribute.KeyValue", m.Name, argString)
-	}
-	g.out()
-	g.p("}")
-	g.p("")
-
-	// Struct with delegate (original interface) and extractor.
 	g.p("// %v is a tracing decorator of %v interface.", mockType, intf.Name)
 	g.p("type %v%v struct {", mockType, longTp)
 	g.in()
-	g.p("delegate  %v", intf.Name)
-	g.p("extractor %vAttributeExtractor%v", intf.Name, shortTp)
+	g.p("delegate    %v", intf.Name)
+	g.p("extraAttrs  func(method string, args ...any) []attribute.KeyValue")
 	g.out()
 	g.p("}")
 	g.p("")
 
 	// Constructor.
 	g.p("// New%v creates a new trace decorator instance.", mockType)
-	g.p("// extractor may be nil to disable custom span attributes.")
-	g.p("func New%v%v(delegate %v, extractor %vAttributeExtractor%v) *%v%v {",
-		mockType, longTp, intf.Name, intf.Name, shortTp, mockType, shortTp)
+	g.p("// extraAttrs may be nil to disable custom span attributes. When non-nil it is called")
+	g.p("// on every context-bearing method with the method name and arguments; the returned")
+	g.p("// attributes are set on the span via span.SetAttributes.")
+	g.p("func New%v%v(delegate %v, extraAttrs func(method string, args ...any) []attribute.KeyValue) *%v%v {",
+		mockType, longTp, intf.Name, mockType, shortTp)
 	g.in()
-	g.p(`return &%v%v{delegate: delegate, extractor: extractor}`, mockType, shortTp)
+	g.p(`return &%v%v{delegate: delegate, extraAttrs: extraAttrs}`, mockType, shortTp)
 	g.out()
 	g.p("}")
 	g.p("")
@@ -121,6 +106,12 @@ func generateTracedMethod(g *generator, mockType, intfName string, m *model.Meth
 		}
 	}
 
+	// Args passed to extraAttrs — variadic slice is not expanded.
+	extArgs := extractorCallArgs(argNames, m)
+	if extArgs != "" {
+		extArgs = ", " + extArgs
+	}
+
 	g.p("// %v traced base method.", m.Name)
 	g.p("func (%v *%v%v) %v(%v)%v {", idRecv, mockType, shortTp, m.Name, argString, retString)
 	g.in()
@@ -132,9 +123,9 @@ func generateTracedMethod(g *generator, mockType, intfName string, m *model.Meth
 		g.p(`%v := otel.Tracer("%s")`, idTracer, intfName)
 		g.p("%s, %v := %v.Start(%v, %q)", ctxArg, idSpan, idTracer, ctxArg, m.Name)
 		g.p("defer %v.End()", idSpan)
-		g.p(`if %v.extractor != nil {`, idRecv)
+		g.p(`if %v.extraAttrs != nil {`, idRecv)
 		g.in()
-		g.p(`%v.SetAttributes(%v.extractor.%v(%v)...)`, idSpan, idRecv, m.Name, callArgs)
+		g.p(`%v.SetAttributes(%v.extraAttrs("%v"%v)...)`, idSpan, idRecv, m.Name, extArgs)
 		g.out()
 		g.p("}")
 

@@ -55,6 +55,23 @@ func camelToSnake(s string) string {
 	return b.String()
 }
 
+// extractorCallArgs builds the argument list for passing to the extraLabels func.
+// For non-variadic methods all arg names are passed directly.
+// For variadic methods the variadic slice is passed as a single element (not expanded).
+func extractorCallArgs(argNames []string, m *model.Method) string {
+	if len(argNames) == 0 {
+		return ""
+	}
+	if m.Variadic == nil {
+		return strings.Join(argNames, ", ")
+	}
+	// variadic: pass non-variadic args + the slice itself (not expanded)
+	if len(argNames) == 1 {
+		return argNames[0]
+	}
+	return strings.Join(argNames[:len(argNames)-1], ", ") + ", " + argNames[len(argNames)-1]
+}
+
 func generateMetricsInterface(g *generator, intf *model.Interface, outputPackagePath string) error {
 	mockType := g.metricsName(intf.Name)
 	longTp, shortTp := g.formattedTypeParams(intf, outputPackagePath)
@@ -62,43 +79,28 @@ func generateMetricsInterface(g *generator, intf *model.Interface, outputPackage
 	// Sort methods once; used for struct fields, constructor, and method bodies.
 	sort.Sort(byMethodName(intf.Methods))
 
-	// Label extractor interface.
+	// Struct: one histogram field per method, plus delegate and extraLabels func.
 	g.p("")
-	g.p("// %vLabelExtractor allows callers to attach custom metric label values per call.", intf.Name)
-	g.p("// Each method receives the same arguments as the wrapped interface and returns")
-	g.p("// additional label key-value pairs (flat: \"key\", \"val\", ...) to append to the observation.")
-	g.p("// Pass nil to New%v to disable custom labeling.", mockType)
-	g.p("type %vLabelExtractor%v interface {", intf.Name, longTp)
-	g.in()
-	for _, m := range intf.Methods {
-		argNames := g.getArgNames(m, true)
-		argTypes := g.getArgTypes(m, outputPackagePath, true)
-		argString := makeArgString(argNames, argTypes)
-		g.p("%s(%s) []string", m.Name, argString)
-	}
-	g.out()
-	g.p("}")
-	g.p("")
-
-	// Struct: one histogram field per method, plus delegate and extractor.
 	g.p("// %v is a metrics decorator of %v interface.", mockType, intf.Name)
 	g.p("type %v%v struct {", mockType, longTp)
 	g.in()
 	for _, m := range intf.Methods {
 		g.p("%s metrics.Histogram", methodFieldName(m.Name))
 	}
-	g.p("delegate  %v", intf.Name)
-	g.p("extractor %vLabelExtractor%v", intf.Name, shortTp)
+	g.p("delegate     %v", intf.Name)
+	g.p("extraLabels  func(method string, args ...any) []string")
 	g.out()
 	g.p("}")
 	g.p("")
 
 	// Constructor.
 	g.p("// New%v creates a new metrics decorator.", mockType)
-	g.p("// extractor may be nil. extraLabelNames declares the label keys the extractor methods will return,")
-	g.p("// and must be consistent across all calls (Prometheus requires fixed label sets at registration time).")
-	g.p("func New%v%v(delegate %v, extractor %vLabelExtractor%v, extraLabelNames ...string) *%v%v {",
-		mockType, longTp, intf.Name, intf.Name, shortTp, mockType, shortTp)
+	g.p("// extraLabels may be nil to disable custom labeling. When non-nil it is called on every")
+	g.p("// method invocation with the method name and arguments; the returned flat key-value pairs")
+	g.p("// are appended to the histogram observation. extraLabelNames must list the label keys")
+	g.p("// that extraLabels will return (Prometheus requires a fixed label set at registration time).")
+	g.p("func New%v%v(delegate %v, extraLabels func(method string, args ...any) []string, extraLabelNames ...string) *%v%v {",
+		mockType, longTp, intf.Name, mockType, shortTp)
 	g.in()
 	g.p(`allLabels := append([]string{"error"}, extraLabelNames...)`)
 	for _, m := range intf.Methods {
@@ -117,8 +119,8 @@ func generateMetricsInterface(g *generator, intf *model.Interface, outputPackage
 		fn := methodFieldName(m.Name)
 		g.p(`%s: %s,`, fn, fn)
 	}
-	g.p(`delegate:  delegate,`)
-	g.p(`extractor: extractor,`)
+	g.p(`delegate:    delegate,`)
+	g.p(`extraLabels: extraLabels,`)
 	g.out()
 	g.p(`}`)
 	g.out()
@@ -173,6 +175,12 @@ func generateMetricsMethod(g *generator, mockType, intfName string, m *model.Met
 		}
 	}
 
+	// Args passed to extraLabels — variadic slice is not expanded.
+	extArgs := extractorCallArgs(argNames, m)
+	if extArgs != "" {
+		extArgs = ", " + extArgs
+	}
+
 	g.p("// %v Metrics base method.", m.Name)
 	g.p("func (%v *%v%v) %v(%v)%v {", idRecv, mockType, shortTp, m.Name, argString, retString)
 	g.in()
@@ -208,11 +216,11 @@ func generateMetricsMethod(g *generator, mockType, intfName string, m *model.Met
 		}
 	}
 
-	// Build label slice; append extractor labels if provided.
+	// Build label slice; append extraLabels output if provided.
 	g.p(`%v := []string{"error", %v}`, idLabels, idFailed)
-	g.p(`if %v.extractor != nil {`, idRecv)
+	g.p(`if %v.extraLabels != nil {`, idRecv)
 	g.in()
-	g.p(`%v = append(%v, %v.extractor.%v(%v)...)`, idLabels, idLabels, idRecv, m.Name, callArgs)
+	g.p(`%v = append(%v, %v.extraLabels("%v"%v)...)`, idLabels, idLabels, idRecv, m.Name, extArgs)
 	g.out()
 	g.p("}")
 	g.p(`%v.%v.With(%v...).Observe(%v.Seconds())`, idRecv, fieldName, idLabels, idTook)
