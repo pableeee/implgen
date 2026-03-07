@@ -38,10 +38,10 @@ func methodFieldName(methodName string) string {
 	return strings.ToLower(methodName[:1]) + methodName[1:] + "Duration"
 }
 
-// methodMetricName converts a method name to a Prometheus metric name.
-// e.g. "Save" -> "save_duration_milliseconds", "FetchAll" -> "fetch_all_duration_milliseconds"
-func methodMetricName(methodName string) string {
-	return camelToSnake(methodName) + "_duration_milliseconds"
+// otelMetricName returns the OTel instrument name for a method.
+// e.g. ("UserStore", "FetchAll") -> "user_store.fetch_all.duration"
+func otelMetricName(intfName, methodName string) string {
+	return camelToSnake(intfName) + "." + camelToSnake(methodName) + ".duration"
 }
 
 func camelToSnake(s string) string {
@@ -55,7 +55,7 @@ func camelToSnake(s string) string {
 	return b.String()
 }
 
-// extractorCallArgs builds the argument list for passing to the extraLabels func.
+// extractorCallArgs builds the argument list for passing to the extraAttrs func.
 // For non-variadic methods all arg names are passed directly.
 // For variadic methods the variadic slice is passed as a single element (not expanded).
 func extractorCallArgs(argNames []string, m *model.Method) string {
@@ -65,7 +65,6 @@ func extractorCallArgs(argNames []string, m *model.Method) string {
 	if m.Variadic == nil {
 		return strings.Join(argNames, ", ")
 	}
-	// variadic: pass non-variadic args + the slice itself (not expanded)
 	if len(argNames) == 1 {
 		return argNames[0]
 	}
@@ -76,42 +75,45 @@ func generateMetricsInterface(g *generator, intf *model.Interface, outputPackage
 	mockType := g.metricsName(intf.Name)
 	longTp, shortTp := g.formattedTypeParams(intf, outputPackagePath)
 
-	// Sort methods once; used for struct fields, constructor, and method bodies.
 	sort.Sort(byMethodName(intf.Methods))
 
-	// Struct: one histogram field per method, plus delegate and extraLabels func.
+	// Struct: one histogram field per method, plus delegate and extraAttrs func.
 	g.p("")
 	g.p("// %v is a metrics decorator of %v interface.", mockType, intf.Name)
 	g.p("type %v%v struct {", mockType, longTp)
 	g.in()
 	for _, m := range intf.Methods {
-		g.p("%s metrics.Histogram", methodFieldName(m.Name))
+		g.p("%s metric.Float64Histogram", methodFieldName(m.Name))
 	}
-	g.p("delegate     %v", intf.Name)
-	g.p("extraLabels  func(method string, args ...any) []string")
+	g.p("delegate    %v", intf.Name)
+	g.p("extraAttrs  func(method string, args ...any) []attribute.KeyValue")
 	g.out()
 	g.p("}")
 	g.p("")
 
 	// Constructor.
 	g.p("// New%v creates a new metrics decorator.", mockType)
-	g.p("// extraLabels may be nil to disable custom labeling. When non-nil it is called on every")
-	g.p("// method invocation with the method name and arguments; the returned flat key-value pairs")
-	g.p("// are appended to the histogram observation. extraLabelNames must list the label keys")
-	g.p("// that extraLabels will return (Prometheus requires a fixed label set at registration time).")
-	g.p("func New%v%v(delegate %v, extraLabels func(method string, args ...any) []string, extraLabelNames ...string) *%v%v {",
+	g.p("// extraAttrs may be nil to disable custom attributes. When non-nil it is called on every")
+	g.p("// method invocation with the method name and arguments; the returned attributes are")
+	g.p("// attached to the histogram observation alongside the built-in error attribute.")
+	g.p("func New%v%v(delegate %v, extraAttrs func(method string, args ...any) []attribute.KeyValue) (*%v%v, error) {",
 		mockType, longTp, intf.Name, mockType, shortTp)
 	g.in()
-	g.p(`allLabels := append([]string{"error"}, extraLabelNames...)`)
+	g.p(`meter := otel.Meter("%v")`, intf.Name)
 	for _, m := range intf.Methods {
-		g.p(`%s := prometheus.NewHistogramFrom(stdprometheus.HistogramOpts{`, methodFieldName(m.Name))
+		fn := methodFieldName(m.Name)
+		g.p(`%s, err := meter.Float64Histogram(`, fn)
 		g.in()
-		g.p(`Subsystem: "%v",`, intf.Name)
-		g.p(`Name:      "%v",`, methodMetricName(m.Name))
-		g.p(`Help:      "Duration of %v calls in milliseconds",`, m.Name)
-		g.p(`Buckets:   stdprometheus.DefBuckets,`)
+		g.p(`"%v",`, otelMetricName(intf.Name, m.Name))
+		g.p(`metric.WithDescription("Duration of %v calls"),`, m.Name)
+		g.p(`metric.WithUnit("s"),`)
 		g.out()
-		g.p(`}, allLabels)`)
+		g.p(`)`)
+		g.p(`if err != nil {`)
+		g.in()
+		g.p(`return nil, err`)
+		g.out()
+		g.p(`}`)
 	}
 	g.p(`return &%v%v{`, mockType, shortTp)
 	g.in()
@@ -119,10 +121,10 @@ func generateMetricsInterface(g *generator, intf *model.Interface, outputPackage
 		fn := methodFieldName(m.Name)
 		g.p(`%s: %s,`, fn, fn)
 	}
-	g.p(`delegate:    delegate,`)
-	g.p(`extraLabels: extraLabels,`)
+	g.p(`delegate:   delegate,`)
+	g.p(`extraAttrs: extraAttrs,`)
 	g.out()
-	g.p(`}`)
+	g.p(`}, nil`)
 	g.out()
 	g.p("}")
 	g.p("")
@@ -140,6 +142,8 @@ func generateMetricsMethod(g *generator, mockType, intfName string, m *model.Met
 	argTypes := g.getArgTypes(m, pkgOverride, true)
 	argString := makeArgString(argNames, argTypes)
 
+	isContextMethod := len(argTypes) > 0 && argTypes[0] == "context.Context"
+
 	rets := make([]string, len(m.Out))
 	for i, p := range m.Out {
 		rets[i] = p.Type.String(g.packageMap, pkgOverride)
@@ -156,8 +160,7 @@ func generateMetricsMethod(g *generator, mockType, intfName string, m *model.Met
 	idRecv := ia.allocateIdentifier("t")
 	idBegin := ia.allocateIdentifier("begin")
 	idTook := ia.allocateIdentifier("took")
-	idFailed := ia.allocateIdentifier("failed")
-	idLabels := ia.allocateIdentifier("labelVals")
+	idAttrs := ia.allocateIdentifier("attrs")
 
 	fieldName := methodFieldName(m.Name)
 
@@ -175,10 +178,15 @@ func generateMetricsMethod(g *generator, mockType, intfName string, m *model.Met
 		}
 	}
 
-	// Args passed to extraLabels — variadic slice is not expanded.
 	extArgs := extractorCallArgs(argNames, m)
 	if extArgs != "" {
 		extArgs = ", " + extArgs
+	}
+
+	// Context argument to pass to Record; fall back to context.Background() for non-context methods.
+	recordCtx := "context.Background()"
+	if isContextMethod {
+		recordCtx = argNames[0]
 	}
 
 	g.p("// %v Metrics base method.", m.Name)
@@ -197,33 +205,27 @@ func generateMetricsMethod(g *generator, mockType, intfName string, m *model.Met
 		}
 	}
 
-	g.p(`%v := "N/A"`, idFailed)
-
 	if len(m.Out) == 0 {
 		g.p(`%s.delegate.%s(%s)`, idRecv, m.Name, callArgs)
 		g.p("%v := time.Since(%v)", idTook, idBegin)
+		g.p(`%v := []attribute.KeyValue{}`, idAttrs)
 	} else {
 		returnArgsString := strings.Join(returns, ", ")
 		g.p(`%s := %s.delegate.%s(%s)`, returnArgsString, idRecv, m.Name, callArgs)
 		g.p("%v := time.Since(%v)", idTook, idBegin)
 		if returnsError {
-			g.p(`%v = "false"`, idFailed)
-			g.p(`if %v != nil {`, returns[errorIndex])
-			g.in()
-			g.p(`%v = "true"`, idFailed)
-			g.out()
-			g.p("}")
+			g.p(`%v := []attribute.KeyValue{attribute.Bool("error", %v != nil)}`, idAttrs, returns[errorIndex])
+		} else {
+			g.p(`%v := []attribute.KeyValue{}`, idAttrs)
 		}
 	}
 
-	// Build label slice; append extraLabels output if provided.
-	g.p(`%v := []string{"error", %v}`, idLabels, idFailed)
-	g.p(`if %v.extraLabels != nil {`, idRecv)
+	g.p(`if %v.extraAttrs != nil {`, idRecv)
 	g.in()
-	g.p(`%v = append(%v, %v.extraLabels("%v"%v)...)`, idLabels, idLabels, idRecv, m.Name, extArgs)
+	g.p(`%v = append(%v, %v.extraAttrs("%v"%v)...)`, idAttrs, idAttrs, idRecv, m.Name, extArgs)
 	g.out()
 	g.p("}")
-	g.p(`%v.%v.With(%v...).Observe(%v.Seconds())`, idRecv, fieldName, idLabels, idTook)
+	g.p(`%v.%v.Record(%v, %v.Seconds(), metric.WithAttributes(%v...))`, idRecv, fieldName, recordCtx, idTook, idAttrs)
 
 	if len(m.Out) > 0 {
 		g.p(`return %s`, strings.Join(returns, ", "))

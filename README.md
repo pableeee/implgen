@@ -7,7 +7,7 @@ implgen is a fork of [uber-go/mock](https://github.com/uber-go/mock) that extend
 In addition to the standard `mock` mode, `mockgen` in this fork can generate:
 
 - **Tracing wrappers** (`-implementation_type=trace`): generates a struct that wraps your interface and automatically starts/ends an OpenTelemetry span per method. Methods whose first argument is `context.Context` get full span lifecycle management and error recording.
-- **Metrics wrappers** (`-implementation_type=metrics`): generates a struct that wraps your interface and records a Prometheus histogram of call duration per method, labeled by whether the call returned an error.
+- **Metrics wrappers** (`-implementation_type=metrics`): generates a struct that wraps your interface and records an OpenTelemetry `Float64Histogram` of call duration per method. Exports to Prometheus (or any OTel backend) via the standard OTel exporter — no go-kit or direct Prometheus dependency required.
 - **Logging wrappers** (`-implementation_type=log`): generates a struct that wraps your interface and logs every call and its outcome using `*slog.Logger`. Context methods use context-aware log variants.
 
 ## Installation
@@ -98,7 +98,7 @@ traced := NewTracedFooImpl(realFoo, func(method string, args ...any) []attribute
 
 ### Metrics decorator
 
-Generates a struct that wraps the interface and records a Prometheus histogram of call duration for every method, labeled with `error=true/false`.
+Generates a struct that wraps the interface and records an OpenTelemetry `Float64Histogram` of call duration per method, with a built-in `error` attribute (`true`/`false`). Because the backend is OTel, you can export to Prometheus via the OTel Prometheus exporter, or to any other OTel-compatible backend, without extra dependencies.
 
 ```bash
 mockgen -source=foo.go -destination=metrics_foo.go -implementation_type=metrics
@@ -109,28 +109,34 @@ Generated output for an interface `Foo`:
 ```go
 // MetricsFooImpl is a metrics decorator of Foo interface.
 type MetricsFooImpl struct {
-    doSomethingDuration  metrics.Histogram
+    doSomethingDuration  metric.Float64Histogram
     delegate             Foo
-    extraLabels          func(method string, args ...any) []string
+    extraAttrs           func(method string, args ...any) []attribute.KeyValue
 }
 
-func NewMetricsFooImpl(
-    delegate Foo,
-    extraLabels func(method string, args ...any) []string,
-    extraLabelNames ...string,
-) *MetricsFooImpl
+// Returns (*MetricsFooImpl, error) because OTel histogram registration can fail.
+func NewMetricsFooImpl(delegate Foo, extraAttrs func(method string, args ...any) []attribute.KeyValue) (*MetricsFooImpl, error)
 ```
 
-Pass `nil` as `extraLabels` to use only the built-in `error` label. When non-nil, declare the extra label keys up front (Prometheus requires a fixed label set at registration time):
+The `extraAttrs` func has the same signature as in the tracing decorator, so the same function can be reused for both. Pass `nil` to disable custom attributes:
 
 ```go
-metrics := NewMetricsFooImpl(realFoo, func(method string, args ...any) []string {
+m, err := NewMetricsFooImpl(realFoo, func(method string, args ...any) []attribute.KeyValue {
     switch method {
     case "DoSomething":
-        return []string{"region", args[1].(string)}
+        return []attribute.KeyValue{attribute.String("region", args[1].(string))}
     }
-    return []string{"region", "unknown"}
-}, "region")
+    return nil
+})
+```
+
+To export to Prometheus, wire the OTel Prometheus exporter once at startup — no changes to the generated code needed:
+
+```go
+exporter, _ := otelprom.New()
+provider := metric.NewMeterProvider(metric.WithReader(exporter))
+otel.SetMeterProvider(provider)
+http.Handle("/metrics", promhttp.Handler())
 ```
 
 ### Logging decorator

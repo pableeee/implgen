@@ -8,7 +8,9 @@ import (
 )
 
 func metricsGenerator() generator {
-	return generator{}
+	return generator{
+		packageMap: map[string]string{"context": "context"},
+	}
 }
 
 func TestGenerateMetricsInterface_StructAndConstructor(t *testing.T) {
@@ -25,17 +27,17 @@ func TestGenerateMetricsInterface_StructAndConstructor(t *testing.T) {
 	if !strings.Contains(out, "type MetricsStoreImpl struct {") {
 		t.Error("expected MetricsStoreImpl struct declaration")
 	}
-	if !strings.Contains(out, "pingDuration metrics.Histogram") {
-		t.Error("expected per-method pingDuration histogram field")
+	if !strings.Contains(out, "pingDuration metric.Float64Histogram") {
+		t.Error("expected per-method pingDuration OTel histogram field")
 	}
-	if !strings.Contains(out, "delegate     Store") {
+	if !strings.Contains(out, "delegate    Store") {
 		t.Error("expected delegate field of original type Store")
 	}
-	if !strings.Contains(out, "extraLabels  func(method string, args ...any) []string") {
-		t.Error("expected extraLabels func field")
+	if !strings.Contains(out, "extraAttrs  func(method string, args ...any) []attribute.KeyValue") {
+		t.Error("expected extraAttrs func field returning []attribute.KeyValue")
 	}
-	if !strings.Contains(out, "func NewMetricsStoreImpl(delegate Store, extraLabels func(method string, args ...any) []string, extraLabelNames ...string) *MetricsStoreImpl {") {
-		t.Error("expected NewMetricsStoreImpl constructor signature")
+	if !strings.Contains(out, "func NewMetricsStoreImpl(delegate Store, extraAttrs func(method string, args ...any) []attribute.KeyValue) (*MetricsStoreImpl, error) {") {
+		t.Error("expected NewMetricsStoreImpl constructor returning (*Type, error)")
 	}
 }
 
@@ -50,14 +52,17 @@ func TestGenerateMetricsInterface_Constructor_InitializesHistogram(t *testing.T)
 
 	out := g.buf.String()
 
-	if !strings.Contains(out, `Subsystem: "Svc"`) {
-		t.Error("expected histogram subsystem set to interface name")
+	if !strings.Contains(out, `otel.Meter("Svc")`) {
+		t.Error("expected otel.Meter scoped to interface name")
 	}
-	if !strings.Contains(out, `Name:      "call_duration_milliseconds"`) {
-		t.Error("expected histogram metric name")
+	if !strings.Contains(out, `"svc.call.duration"`) {
+		t.Error("expected OTel instrument name svc.call.duration")
 	}
-	if !strings.Contains(out, `allLabels := append([]string{"error"}, extraLabelNames...)`) {
-		t.Error("expected allLabels combining error with extra label names")
+	if !strings.Contains(out, `metric.WithUnit("s")`) {
+		t.Error("expected unit seconds")
+	}
+	if !strings.Contains(out, "return nil, err") {
+		t.Error("expected error propagation from meter.Float64Histogram")
 	}
 }
 
@@ -82,12 +87,12 @@ func TestGenerateMetricsInterface_AllMethods_GetTiming(t *testing.T) {
 	if !strings.Contains(out, "time.Since(") {
 		t.Error("expected time.Since() to compute duration")
 	}
-	if !strings.Contains(out, `.Observe(`) {
-		t.Error("expected histogram.Observe call")
+	if !strings.Contains(out, ".Record(") {
+		t.Error("expected histogram.Record call")
 	}
 }
 
-func TestGenerateMetricsInterface_ErrorReturn_LabelsTrueOrFalse(t *testing.T) {
+func TestGenerateMetricsInterface_ErrorReturn_AttributeBool(t *testing.T) {
 	g := metricsGenerator()
 	intf := &model.Interface{Name: "Writer"}
 	intf.AddMethod(&model.Method{
@@ -105,18 +110,15 @@ func TestGenerateMetricsInterface_ErrorReturn_LabelsTrueOrFalse(t *testing.T) {
 
 	out := g.buf.String()
 
-	if !strings.Contains(out, `"false"`) {
-		t.Error(`expected failed = "false" for non-error path`)
-	}
-	if !strings.Contains(out, `"true"`) {
-		t.Error(`expected failed = "true" inside error check`)
+	if !strings.Contains(out, `attribute.Bool("error",`) {
+		t.Error(`expected attribute.Bool("error", ...) for error label`)
 	}
 	if !strings.Contains(out, "!= nil") {
-		t.Error("expected nil error check to gate the label")
+		t.Error("expected nil check to determine error attribute value")
 	}
 }
 
-func TestGenerateMetricsInterface_NoErrorReturn_LabelsNA(t *testing.T) {
+func TestGenerateMetricsInterface_NoErrorReturn_EmptyAttrs(t *testing.T) {
 	g := metricsGenerator()
 	intf := &model.Interface{Name: "Reader"}
 	intf.AddMethod(&model.Method{
@@ -130,15 +132,50 @@ func TestGenerateMetricsInterface_NoErrorReturn_LabelsNA(t *testing.T) {
 
 	out := g.buf.String()
 
-	if !strings.Contains(out, `"N/A"`) {
-		t.Error(`expected failed = "N/A" when method does not return error`)
-	}
-	if strings.Contains(out, `"true"`) || strings.Contains(out, `"false"`) {
-		t.Error("should not emit error label values when there is no error return")
+	if strings.Contains(out, `attribute.Bool("error"`) {
+		t.Error("should not emit error attribute when method does not return error")
 	}
 }
 
-func TestGenerateMetricsInterface_NoReturnMethod_ObservesAndReturnsNothing(t *testing.T) {
+func TestGenerateMetricsInterface_ContextMethod_UsesCtxForRecord(t *testing.T) {
+	g := metricsGenerator()
+	intf := &model.Interface{Name: "Svc"}
+	intf.AddMethod(&model.Method{
+		Name: "Call",
+		In:   []*model.Parameter{contextParam("ctx")},
+	})
+
+	if err := generateMetricsInterface(&g, intf, ""); err != nil {
+		t.Fatal(err)
+	}
+
+	out := g.buf.String()
+
+	if !strings.Contains(out, ".Record(ctx,") {
+		t.Error("expected Record to use ctx for context methods")
+	}
+}
+
+func TestGenerateMetricsInterface_NonContextMethod_UsesBackground(t *testing.T) {
+	g := metricsGenerator()
+	intf := &model.Interface{Name: "Counter"}
+	intf.AddMethod(&model.Method{
+		Name: "Increment",
+		In:   []*model.Parameter{{Name: "n", Type: model.PredeclaredType("int")}},
+	})
+
+	if err := generateMetricsInterface(&g, intf, ""); err != nil {
+		t.Fatal(err)
+	}
+
+	out := g.buf.String()
+
+	if !strings.Contains(out, ".Record(context.Background(),") {
+		t.Error("expected Record to use context.Background() for non-context methods")
+	}
+}
+
+func TestGenerateMetricsInterface_NoReturnMethod_RecordsAndReturnsNothing(t *testing.T) {
 	g := metricsGenerator()
 	intf := &model.Interface{Name: "Notifier"}
 	intf.AddMethod(&model.Method{
@@ -152,15 +189,15 @@ func TestGenerateMetricsInterface_NoReturnMethod_ObservesAndReturnsNothing(t *te
 
 	out := g.buf.String()
 
-	if !strings.Contains(out, ".Observe(") {
-		t.Error("expected Observe even when method returns nothing")
+	if !strings.Contains(out, ".Record(") {
+		t.Error("expected Record even when method returns nothing")
 	}
-	if strings.Contains(out, "return t.delegate") || strings.Contains(out, "return ret") {
-		t.Error("should not emit return statement in method body when method has no return values")
+	if strings.Contains(out, "return ret") {
+		t.Error("should not emit return statement for void method")
 	}
 }
 
-func TestGenerateMetricsInterface_ExtraLabelsCall(t *testing.T) {
+func TestGenerateMetricsInterface_ExtraAttrsCall(t *testing.T) {
 	g := metricsGenerator()
 	intf := &model.Interface{Name: "Svc"}
 	intf.AddMethod(&model.Method{
@@ -174,14 +211,11 @@ func TestGenerateMetricsInterface_ExtraLabelsCall(t *testing.T) {
 
 	out := g.buf.String()
 
-	if !strings.Contains(out, "if t.extraLabels != nil {") {
-		t.Error("expected nil extraLabels guard")
+	if !strings.Contains(out, "if t.extraAttrs != nil {") {
+		t.Error("expected nil extraAttrs guard")
 	}
-	if !strings.Contains(out, `t.extraLabels("Call", id)`) {
-		t.Error(`expected extraLabels("Call", id) call`)
-	}
-	if !strings.Contains(out, `[]string{"error",`) {
-		t.Error("expected base label slice starting with error key")
+	if !strings.Contains(out, `t.extraAttrs("Call", id)`) {
+		t.Error(`expected extraAttrs("Call", id) call`)
 	}
 }
 
@@ -206,8 +240,7 @@ func TestGenerateMetricsInterface_VariadicMethod(t *testing.T) {
 	if !strings.Contains(out, "args...") {
 		t.Error("expected variadic args forwarded with ...")
 	}
-	// extraLabels receives the slice, not expanded
-	if !strings.Contains(out, `extraLabels("Printf", format, args)`) {
-		t.Error("expected extraLabels to receive variadic slice, not expanded args")
+	if !strings.Contains(out, `extraAttrs("Printf", format, args)`) {
+		t.Error("expected extraAttrs to receive variadic slice, not expanded args")
 	}
 }
