@@ -22,16 +22,22 @@ func TestGenerateMetricsInterface_StructAndConstructor(t *testing.T) {
 
 	out := g.buf.String()
 
-	if !strings.Contains(out, "type MetricsStore interface {") {
-		t.Error("expected narrowed MetricsStore interface declaration")
+	if !strings.Contains(out, "type StoreLabelExtractor interface {") {
+		t.Error("expected StoreLabelExtractor interface declaration")
 	}
 	if !strings.Contains(out, "type MetricsStoreImpl struct {") {
 		t.Error("expected MetricsStoreImpl struct declaration")
 	}
-	if !strings.Contains(out, "duration metrics.Histogram") {
-		t.Error("expected duration histogram field")
+	if !strings.Contains(out, "pingDuration metrics.Histogram") {
+		t.Error("expected per-method pingDuration histogram field")
 	}
-	if !strings.Contains(out, "func NewMetricsStoreImpl(ctrl MetricsStore) *MetricsStoreImpl {") {
+	if !strings.Contains(out, "delegate  Store") {
+		t.Error("expected delegate field of original type Store")
+	}
+	if !strings.Contains(out, "extractor StoreLabelExtractor") {
+		t.Error("expected extractor field of type StoreLabelExtractor")
+	}
+	if !strings.Contains(out, "func NewMetricsStoreImpl(delegate Store, extractor StoreLabelExtractor, extraLabelNames ...string) *MetricsStoreImpl {") {
 		t.Error("expected NewMetricsStoreImpl constructor")
 	}
 }
@@ -50,11 +56,11 @@ func TestGenerateMetricsInterface_Constructor_InitializesHistogram(t *testing.T)
 	if !strings.Contains(out, `Subsystem: "Svc"`) {
 		t.Error("expected histogram subsystem set to interface name")
 	}
-	if !strings.Contains(out, `Name: "duration_milliseconds"`) {
+	if !strings.Contains(out, `Name:      "call_duration_milliseconds"`) {
 		t.Error("expected histogram metric name")
 	}
-	if !strings.Contains(out, `[]string{"error"}`) {
-		t.Error("expected histogram labeled with error")
+	if !strings.Contains(out, `allLabels := append([]string{"error"}, extraLabelNames...)`) {
+		t.Error("expected allLabels combining error with extra label names")
 	}
 }
 
@@ -131,8 +137,9 @@ func TestGenerateMetricsInterface_NoErrorReturn_LabelsNA(t *testing.T) {
 	if !strings.Contains(out, `"N/A"`) {
 		t.Error(`expected failed = "N/A" when method does not return error`)
 	}
-	if strings.Contains(out, "!= nil") {
-		t.Error("should not emit nil check when there is no error return")
+	// The only != nil allowed is the extractor guard; there must be no error return nil-check.
+	if strings.Contains(out, `"true"`) || strings.Contains(out, `"false"`) {
+		t.Error("should not emit error label values when there is no error return")
 	}
 }
 
@@ -154,9 +161,34 @@ func TestGenerateMetricsInterface_NoReturnMethod_ObservesAndReturnsNothing(t *te
 		t.Error("expected Observe even when method returns nothing")
 	}
 	// The method body should not have a return statement; the constructor's
-	// "return deco" is fine, but the Notify method itself must not return.
+	// "return &..." is fine, but the Notify method itself must not return.
 	if strings.Contains(out, "return t.delegate") || strings.Contains(out, "return ret") {
 		t.Error("should not emit return statement in method body when method has no return values")
+	}
+}
+
+func TestGenerateMetricsInterface_ExtractorCall(t *testing.T) {
+	g := metricsGenerator()
+	intf := &model.Interface{Name: "Svc"}
+	intf.AddMethod(&model.Method{
+		Name: "Call",
+		In:   []*model.Parameter{{Name: "id", Type: model.PredeclaredType("string")}},
+	})
+
+	if err := generateMetricsInterface(&g, intf, ""); err != nil {
+		t.Fatal(err)
+	}
+
+	out := g.buf.String()
+
+	if !strings.Contains(out, "if t.extractor != nil {") {
+		t.Error("expected nil extractor guard")
+	}
+	if !strings.Contains(out, ".extractor.Call(") {
+		t.Error("expected extractor.Call forwarding method args")
+	}
+	if !strings.Contains(out, `[]string{"error",`) {
+		t.Error("expected base label slice starting with error key")
 	}
 }
 

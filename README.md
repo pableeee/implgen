@@ -8,6 +8,7 @@ In addition to the standard `mock` mode, `mockgen` in this fork can generate:
 
 - **Tracing wrappers** (`-implementation_type=trace`): generates a struct that wraps your interface and automatically starts/ends an OpenTelemetry span per method. Methods whose first argument is `context.Context` get full span lifecycle management and error recording.
 - **Metrics wrappers** (`-implementation_type=metrics`): generates a struct that wraps your interface and records a Prometheus histogram of call duration per method, labeled by whether the call returned an error.
+- **Logging wrappers** (`-implementation_type=log`): generates a struct that wraps your interface and logs every call and its outcome using `*slog.Logger`. Context methods use context-aware log variants.
 
 ## Installation
 
@@ -81,17 +82,25 @@ func (t *TracedFooImpl) DoSomething(ctx context.Context, arg string) error {
 
 ### Metrics decorator
 
-Generates a struct that wraps the interface and records a Prometheus histogram of call duration for every method, labeled with `error=true/false`.
+Generates a struct that wraps the interface and records a Prometheus histogram of call duration for every method, labeled with `error=true/false`. An optional `FooLabelExtractor` interface lets callers attach additional label key-value pairs per call for finer segmentation.
 
 ```bash
 mockgen -source=foo.go -destination=metrics_foo.go -implementation_type=metrics
+```
+
+### Logging decorator
+
+Generates a struct that wraps the interface and logs every method call and its outcome using `*slog.Logger`. Context-aware methods use `InfoContext`/`ErrorContext`; error returns are logged at `Error` level with the error value as a structured attribute.
+
+```bash
+mockgen -source=foo.go -destination=log_foo.go -implementation_type=log
 ```
 
 ## Flags
 
 All upstream flags are supported. Fork-specific additions:
 
-- `-implementation_type`: Type of code to generate: `mock` (default), `trace`, or `metrics`.
+- `-implementation_type`: Type of code to generate: `mock` (default), `trace`, `metrics`, or `log`.
 
 Standard flags:
 

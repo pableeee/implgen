@@ -34,16 +34,19 @@ func TestGenerateTracedInterface_StructAndConstructor(t *testing.T) {
 
 	out := g.buf.String()
 
-	if !strings.Contains(out, "type TracedStore interface {") {
-		t.Error("expected narrowed TracedStore interface declaration")
+	if !strings.Contains(out, "type StoreAttributeExtractor interface {") {
+		t.Error("expected StoreAttributeExtractor interface declaration")
 	}
 	if !strings.Contains(out, "type TracedStoreImpl struct {") {
 		t.Error("expected TracedStoreImpl struct declaration")
 	}
-	if !strings.Contains(out, "delegate TracedStore") {
-		t.Error("expected delegate field of type TracedStore")
+	if !strings.Contains(out, "delegate  Store") {
+		t.Error("expected delegate field of original type Store")
 	}
-	if !strings.Contains(out, "func NewTracedStoreImpl(ctrl TracedStore) *TracedStoreImpl {") {
+	if !strings.Contains(out, "extractor StoreAttributeExtractor") {
+		t.Error("expected extractor field of type StoreAttributeExtractor")
+	}
+	if !strings.Contains(out, "func NewTracedStoreImpl(delegate Store, extractor StoreAttributeExtractor) *TracedStoreImpl {") {
 		t.Error("expected NewTracedStoreImpl constructor")
 	}
 }
@@ -65,14 +68,42 @@ func TestGenerateTracedInterface_ContextMethod_SpanLifecycle(t *testing.T) {
 
 	out := g.buf.String()
 
-	if !strings.Contains(out, `otel.Tracer("TracedRepoImpl")`) {
-		t.Error("expected otel.Tracer call named after the impl type")
+	if !strings.Contains(out, `otel.Tracer("Repo")`) {
+		t.Error("expected otel.Tracer named after the original interface, not the impl type")
 	}
 	if !strings.Contains(out, `.Start(ctx, "Save")`) {
 		t.Error("expected tracer.Start with context and method name")
 	}
 	if !strings.Contains(out, "defer span.End()") {
 		t.Error("expected defer span.End()")
+	}
+}
+
+func TestGenerateTracedInterface_ContextMethod_ExtractorCall(t *testing.T) {
+	g := tracedGenerator()
+	intf := &model.Interface{Name: "Repo"}
+	intf.AddMethod(&model.Method{
+		Name: "Save",
+		In: []*model.Parameter{
+			contextParam("ctx"),
+			{Name: "val", Type: model.PredeclaredType("string")},
+		},
+	})
+
+	if err := generateTracedInterface(&g, intf, ""); err != nil {
+		t.Fatal(err)
+	}
+
+	out := g.buf.String()
+
+	if !strings.Contains(out, "if t.extractor != nil {") {
+		t.Error("expected nil extractor guard")
+	}
+	if !strings.Contains(out, "span.SetAttributes(") {
+		t.Error("expected span.SetAttributes call with extractor output")
+	}
+	if !strings.Contains(out, ".extractor.Save(") {
+		t.Error("expected extractor.Save call forwarding method args")
 	}
 }
 

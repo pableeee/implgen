@@ -69,7 +69,7 @@ var (
 	imports                = flag.String("imports", "", "(source mode) Comma-separated name=path pairs of explicit imports to use.")
 	auxFiles               = flag.String("aux_files", "", "(source mode) Comma-separated pkg=path pairs of auxiliary Go source files.")
 	excludeInterfaces      = flag.String("exclude_interfaces", "", "(source mode) Comma-separated names of interfaces to be excluded")
-	implType               = flag.String("implementation_type", "mock", "The type of code to generate (mock or trace).")
+	implType               = flag.String("implementation_type", "mock", "The type of code to generate: mock (default), trace, metrics, or log.")
 
 	debugParser = flag.Bool("debug_parser", false, "Print out parser results only.")
 	showVersion = flag.Bool("version", false, "Print version.")
@@ -172,6 +172,9 @@ func main() {
 	case "trace":
 		g.gen = generateTracedInterface
 		outputPrefix = "trace"
+	case "log":
+		g.gen = generateLoggedInterface
+		outputPrefix = "log"
 	case "mock":
 	default:
 		g.gen = generateMockInterface
